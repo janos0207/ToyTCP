@@ -16,7 +16,7 @@ const UNDETERMINED_IP_ADDR: Ipv4Addr = Ipv4Addr::new(0, 0, 0, 0);
 const UNDETERMINED_PORT: u16 = 0;
 const MAX_TRANSMISSION: u8 = 5;
 const RETRANSMISSION_TIMEOUT: u64 = 3;
-const MISS: usize = 1460;
+const MSS: usize = 1460;
 const PORT_RANGE: Range<u16> = 40000..60000;
 
 pub struct TCP {
@@ -281,6 +281,26 @@ impl TCP {
                 ls.connected_connection_queue.push_back(sock_id);
                 self.publish_event(ls.get_sock_id(), TCPEventKind::ConnectionCompleted);
             }
+        }
+        Ok(())
+    }
+
+    pub fn send(&self, sock_id: SockID, buffer: &[u8]) -> Result<()> {
+        let mut cursor = 0;
+        while cursor < buffer.len() {
+            let mut table = self.sockets.write().unwrap();
+            let mut socket = table
+                .get_mut(&sock_id)
+                .context(format!("no such socket: {:?}", sock_id))?;
+            let send_size = cmp::min(MSS, buffer.len() - cursor);
+            socket.send_tcp_packet(
+                socket.send_param.next,
+                socket.recv_param.next,
+                tcpflags::ACK,
+                &buffer[cursor..cursor + send_size],
+            )?;
+            cursor += send_size;
+            socket.send_param.next += send_size as u32;
         }
         Ok(())
     }
